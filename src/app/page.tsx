@@ -5,37 +5,80 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { open } from '@tauri-apps/plugin-dialog';
 import { readDir, BaseDirectory, DirEntry } from '@tauri-apps/plugin-fs';
+import os from 'os';
+import path from 'path';
+import fs from 'fs';
+
 
 const JexiInterface = () => {
-  const [selectedFolder, setSelectedFolder] = useState<string | null>(null);
+  const homeDir = os.homedir();
+  const directories = {
+    Home: homeDir,
+    Pictures: path.join(homeDir, "Pictures"),
+    Videos: path.join(homeDir, "Videos"),
+    Downloads: path.join(homeDir, "Downloads"),
+    Documents: path.join(homeDir, "Documents"),
+    Music: path.join(homeDir, "Music"),
+    Templates: path.join(homeDir, "Templates"),
+  };
+  const extensions = {
+    Pictures: [".jpg", ".jpeg", ".png", ".gif", ".bmp", ".svg"],
+    Videos: [".mp4", ".mkv", ".avi", ".mov", ".flv"],
+    Music: [".mp3", ".wav", ".flac", ".aac", ".ogg"],
+    Documents: [".pdf", ".docx", ".doc", ".txt", ".xlsx", ".pptx"]
+  };
+  const [selectedFolder, setSelectedFolder] = useState<string | null>(directories.Downloads);
   // In a real app, these would be connected to actual functionality
   const [isProcessing, setIsProcessing] = useState(false);
   const [filesProcessed, setFilesProcessed] = useState(0);
-  const [files, setFiles] = useState<DirEntry[]>([]);
+  const [directoryItems, setDirectoryItems] = useState<DirEntry[]>([]);
 
   const selectFolder = async () => {
     setIsProcessing(true);
     const folder = await open({
       directory: true,
-      defaultPath: '~/Downloads'
+      defaultPath: '~/Downloads',
     });
-    if (folder) setSelectedFolder(folder);
-    if (typeof selectedFolder === "string") {
-      // Read directory contents
-      const entries = await readDir(selectedFolder);
-
-      // Filter to include only files (exclude subdirectories)
-      // const fileEntries = entries.filter((entry) => !entry.children);
-
-      setFiles(entries);
+    if (folder) {
+      const entries = await readDir(folder);
+      setDirectoryItems(entries);
     }
     setIsProcessing(false);
   };
+  const getDestinationFolder = (fileName: string): string => {
+    const extension = path.extname(fileName).toLowerCase();
+    if ([".jpg", ".jpeg", ".png", ".gif", ".bmp", ".svg"].includes(extension)) {
+      return directories.Pictures;
+    } else if ([".mp4", ".mkv", ".avi", ".mov", ".flv"].includes(extension)) {
+      return directories.Videos;
+    } else if ([".mp3", ".wav", ".flac", ".aac", ".ogg"].includes(extension)) {
+      return directories.Music;
+    } else if ([".pdf", ".docx", ".doc", ".txt", ".xlsx", ".pptx"].includes(extension)) {
+      return directories.Documents;
+    } else {
+      return directories.Downloads;
+    }
+  };
+  const organizeFiles = async () => {
+    setIsProcessing(true);
+    directoryItems.forEach((item) => {
+      if (item.isFile) {
+        const currentFilePath = path.join(process.cwd(), item.name);  // current file path
+        const destinationFolder = getDestinationFolder(item.name);
+        const fileDestination = path.join(destinationFolder, item.name);
+        fs.mkdirSync(destinationFolder, { recursive: true });  // destination folder
 
-  const readDirectory = async () => {
-    const entries = await readDir('users', { baseDir: BaseDirectory.AppLocalData });
-    console.log(entries);
-    setFiles(entries);
+        // move the file
+        fs.rename(currentFilePath, fileDestination, (err) => {
+          if (err) {
+            console.error(`Error moving file ${item.name}:`, err);
+          } else {
+            console.log(`Moved ${item.name} to ${destinationFolder}`);
+          }
+        });
+      }
+    });
+    setIsProcessing(false);
   };
   return (
     <div className="min-h-screen w-full bg-gradient-to-br from-white to-blue-100 flex items-center justify-center p-4">
@@ -57,7 +100,7 @@ const JexiInterface = () => {
             <div className="flex items-center justify-between p-4 rounded-lg bg-blue-50 cursor-pointer" onClick={selectFolder}>
               <div className="flex items-center gap-3">
                 <FolderOpen className="h-5 w-5 text-blue-600" />
-                <div className="text-sm text-gray-600">{selectedFolder?.split('/').at(-1)} Folder</div>
+                <div className="text-sm text-gray-600">{selectedFolder?.split('/').at(-1) ? selectedFolder?.split('/').at(-1) : 'Downloads'}</div>
               </div>
               <ArrowRight className="h-5 w-5 text-blue-600" />
             </div>
@@ -65,8 +108,8 @@ const JexiInterface = () => {
             {/* Status */}
             <div className="text-center space-y-2">
               <p className="text-sm text-gray-600">
-                {files?.map((file, index) => (
-                  <span key={index}>{file.name}</span>
+                {directoryItems?.map((directoryItem, index) => (
+                  <span key={index}>{directoryItem.name}</span>
                 ))}
               </p>
             </div>
@@ -74,8 +117,8 @@ const JexiInterface = () => {
             {/* Action Button */}
             <Button
               className="w-full bg-blue-600 hover:bg-blue-700 text-white"
-              onClick={readDirectory}
-              disabled={isProcessing}
+              onClick={organizeFiles}
+            // disabled={isProcessing}
             >
               {isProcessing ? (
                 <div className="flex items-center gap-2">
